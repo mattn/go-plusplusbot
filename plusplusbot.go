@@ -7,6 +7,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"regexp"
 	"strconv"
+	"strings"
 	"os"
 )
 
@@ -63,7 +64,7 @@ func main() {
 			rank, nick, score := 1, "", 0
 			for rows.Next() {
 				rows.Scan(&nick, &score)
-				c.Notice(e.Source, fmt.Sprintf("%03d: %s (%d)\n", rank, nick, score))
+				c.Notice(e.Arguments[0], fmt.Sprintf("%03d: %s (%d)\n", rank, nick, score))
 				rank++
 			}
 			return
@@ -79,7 +80,7 @@ func main() {
 			defer tx.Rollback()
 
 			score := 0
-			row, err := tx.Query(`select score from plusplus where nick = ?`, nick)
+			row, err := tx.Query(`select score from plusplus where nick = ?`, strings.ToLower(nick))
 			if err != nil {
 				fmt.Printf("Database error: %v\n", err)
 				return
@@ -101,14 +102,14 @@ func main() {
 			}
 			defer stmt.Close()
 
-			_, err = stmt.Exec(nick, score)
+			_, err = stmt.Exec(strings.ToLower(nick), score)
 			if err != nil {
 				fmt.Printf("Database error: %v\n", err)
 				return
 			}
 			tx.Commit()
 
-			c.Notice(e.Source, fmt.Sprintf("%s (%d)", nick, score))
+			c.Notice(e.Arguments[0], fmt.Sprintf("%s (%d)", nick, score))
 		})
 	})
 
