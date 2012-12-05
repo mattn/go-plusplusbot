@@ -16,6 +16,10 @@ var plusplusTests = []struct {
 	{"m_att_n ++", "", 0},
 	{"mattn+=5", "mattn", 5},
 	{"mattn-=4", "mattn", -4},
+	{"mattn---", "", 0},
+	{"mattn+++", "", 0},
+	{"mattn*=1", "", 0},
+	{"mattn/=1", "", 0},
 }
 
 func TestPlusplus(t *testing.T) {
