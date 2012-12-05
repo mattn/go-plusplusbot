@@ -3,12 +3,12 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"github.com/thoj/go-ircevent"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/thoj/go-ircevent"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
-	"os"
 )
 
 var db *sql.DB
