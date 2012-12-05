@@ -7,13 +7,14 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"regexp"
 	"strconv"
+	"os"
 )
 
 var db *sql.DB
-var plus = regexp.MustCompile(`^\s*([a-zA-Z0-9_-]+)\+\+\s*$`)
-var minus = regexp.MustCompile(`^\s*([a-zA-Z0-9_-]+)--\s*$`)
-var pluseq = regexp.MustCompile(`^\s*([a-zA-Z0-9_-]+)\+=([0-9])\s*$`)
-var minuseq = regexp.MustCompile(`^\s*([a-zA-Z0-9_-]+)\-=([0-9])\s*$`)
+var plus = regexp.MustCompile(`^\s*([a-zA-Z0-9_{^}]+)\+\+\s*$`)
+var minus = regexp.MustCompile(`^\s*([a-zA-Z0-9_{^}]+)--\s*$`)
+var pluseq = regexp.MustCompile(`^\s*([a-zA-Z0-9_{^}]+)\+=([0-9])\s*$`)
+var minuseq = regexp.MustCompile(`^\s*([a-zA-Z0-9_{^}]+)\-=([0-9])\s*$`)
 
 func atoi(a string) int {
 	i, _ := strconv.Atoi(a)
@@ -37,7 +38,6 @@ func plusplus(message string, callback func(nick string, plus int)) {
 }
 
 func main() {
-	room := "#subtech"
 	var err error
 
 	db, err = sql.Open("sqlite3", "./plusplus.db")
@@ -54,6 +54,20 @@ func main() {
 	}
 
 	c.AddCallback("PRIVMSG", func(e *irc.Event) {
+		if e.Message == "!plusplus" {
+			rows, err := db.Query(`select nick, score from plusplus order by score desc`)
+			if err != nil {
+				fmt.Printf("Database error: %v\n", err)
+				return
+			}
+			rank, nick, score := 1, "", 0
+			for rows.Next() {
+				rows.Scan(&nick, &score)
+				c.Notice(e.Source, fmt.Sprintf("%03d: %s (%d)\n", rank, nick, score))
+				rank++
+			}
+			return
+		}
 		plusplus(e.Message, func(nick string, plus int) {
 			println(nick, plus)
 
@@ -94,11 +108,13 @@ func main() {
 			}
 			tx.Commit()
 
-			c.Privmsg(room, fmt.Sprintf("%s (%d)", nick, score))
+			c.Notice(e.Source, fmt.Sprintf("%s (%d)", nick, score))
 		})
 	})
 
-	c.Join(room)
+	for _, room := range os.Args[1:] {
+		c.Join("#" + room)
+	}
 
 	c.Loop()
 }
