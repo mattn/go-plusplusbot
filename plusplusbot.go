@@ -9,9 +9,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 var db *sql.DB
+var mutex = new(sync.Mutex)
 var plus = regexp.MustCompile(`^\s*([a-zA-Z0-9_{^}]+)\+\+\s*$`)
 var minus = regexp.MustCompile(`^\s*([a-zA-Z0-9_{^}]+)--\s*$`)
 var pluseq = regexp.MustCompile(`^\s*([a-zA-Z0-9_{^}]+)\+=([0-9])\s*$`)
@@ -39,11 +41,8 @@ func parse(message string, callback func(nick string, plus int)) {
 }
 
 func plusplus(c *irc.Conn, line *irc.Line, nick string, plus int) {
-	defer func() {
-		if err := recover(); err != nil {
-			println("die")
-		}
-	}()
+	mutex.Lock()
+	defer mutex.Unlock()
 
 	tx, err := db.Begin()
 	if err != nil {
@@ -86,6 +85,9 @@ func plusplus(c *irc.Conn, line *irc.Line, nick string, plus int) {
 }
 
 func ranking(c *irc.Conn, line *irc.Line) {
+	mutex.Lock()
+	defer mutex.Unlock()
+
 	rows, err := db.Query(`select nick, score from plusplus order by score desc`)
 	if err != nil {
 		fmt.Printf("Database error: %v\n", err)
@@ -125,7 +127,7 @@ func main() {
 
 	c.AddHandler("privmsg", func(conn *irc.Conn, line *irc.Line) {
 		println(line.Args[0], line.Args[1])
-		if line.Args[1] == "!plusplus" {
+		if line.Args[1] == "!++" {
 			go ranking(c, line)
 		} else {
 			parse(line.Args[1], func(nick string, plus int) {
