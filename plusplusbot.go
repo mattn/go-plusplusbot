@@ -10,14 +10,17 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var db *sql.DB
-var mutex = new(sync.Mutex)
+var lock1 = new(sync.Mutex)
+var lock2 = new(sync.Mutex)
 var plus = regexp.MustCompile(`^\s*([a-zA-Z0-9_{^}]+)\+\+\s*$`)
 var minus = regexp.MustCompile(`^\s*([a-zA-Z0-9_{^}]+)--\s*$`)
 var pluseq = regexp.MustCompile(`^\s*([a-zA-Z0-9_{^}]+)\+=([0-9])\s*$`)
 var minuseq = regexp.MustCompile(`^\s*([a-zA-Z0-9_{^}]+)\-=([0-9])\s*$`)
+var ref = 0
 
 func atoi(a string) int {
 	i, _ := strconv.Atoi(a)
@@ -40,9 +43,32 @@ func parse(message string, callback func(nick string, plus int)) {
 	}
 }
 
+func incr() {
+	lock2.Lock()
+	defer lock2.Unlock()
+	ref++
+}
+
+func decr() {
+	lock2.Lock()
+	defer lock2.Unlock()
+	ref--
+}
+
 func plusplus(c *irc.Conn, line *irc.Line, nick string, plus int) {
-	mutex.Lock()
-	defer mutex.Unlock()
+	score := 0
+
+	incr()
+	lock1.Lock()
+
+	defer func() {
+		lock1.Unlock()
+		<-time.After(1 * time.Second)
+		decr()
+		if ref == 0 {
+			c.Notice(line.Args[0], fmt.Sprintf("%s (%d)", nick, score))
+		}
+	}()
 
 	tx, err := db.Begin()
 	if err != nil {
@@ -51,16 +77,17 @@ func plusplus(c *irc.Conn, line *irc.Line, nick string, plus int) {
 	}
 	defer tx.Rollback()
 
-	score := 0
 	row, err := tx.Query(`select score from plusplus where nick = ?`, strings.ToLower(nick))
 	if err != nil {
 		fmt.Printf("Database error: %v\n", err)
 		return
 	}
+
 	if row.Next() {
 		err = row.Scan(&score)
 		if err != nil {
 			fmt.Printf("Database error: %v\n", err)
+			row.Close()
 			return
 		}
 	}
@@ -80,24 +107,27 @@ func plusplus(c *irc.Conn, line *irc.Line, nick string, plus int) {
 		return
 	}
 	tx.Commit()
-
-	c.Notice(line.Args[0], fmt.Sprintf("%s (%d)", nick, score))
 }
 
 func ranking(c *irc.Conn, line *irc.Line) {
-	mutex.Lock()
-	defer mutex.Unlock()
+	lock1.Lock()
+	defer lock1.Unlock()
 
 	rows, err := db.Query(`select nick, score from plusplus order by score desc`)
 	if err != nil {
 		fmt.Printf("Database error: %v\n", err)
 		return
 	}
+	defer rows.Close()
+
 	rank, nick, score := 1, "", 0
 	for rows.Next() {
 		rows.Scan(&nick, &score)
 		c.Notice(line.Args[0], fmt.Sprintf("%03d: %s (%d)\n", rank, nick, score))
 		rank++
+		if rank > 5 {
+			break
+		}
 	}
 }
 
@@ -126,7 +156,7 @@ func main() {
 	})
 
 	c.AddHandler("privmsg", func(conn *irc.Conn, line *irc.Line) {
-		println(line.Args[0], line.Args[1])
+		println(line.Src, line.Args[0], line.Args[1])
 		if line.Args[1] == "!++" {
 			go ranking(c, line)
 		} else {
