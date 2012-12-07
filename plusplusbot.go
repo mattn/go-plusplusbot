@@ -85,6 +85,20 @@ func plusplus(c *irc.Conn, line *irc.Line, nick string, plus int) {
 	c.Notice(line.Args[0], fmt.Sprintf("%s (%d)", nick, score))
 }
 
+func ranking(c *irc.Conn, line *irc.Line) {
+	rows, err := db.Query(`select nick, score from plusplus order by score desc`)
+	if err != nil {
+		fmt.Printf("Database error: %v\n", err)
+		return
+	}
+	rank, nick, score := 1, "", 0
+	for rows.Next() {
+		rows.Scan(&nick, &score)
+		c.Notice(line.Args[0], fmt.Sprintf("%03d: %s (%d)\n", rank, nick, score))
+		rank++
+	}
+}
+
 func main() {
 	var err error
 
@@ -110,25 +124,14 @@ func main() {
 	})
 
 	c.AddHandler("privmsg", func(conn *irc.Conn, line *irc.Line) {
-		println("-" + line.Args[0] + "-")
-		println("-" + line.Args[1] + "-")
+		println(line.Args[0], line.Args[1])
 		if line.Args[1] == "!plusplus" {
-			rows, err := db.Query(`select nick, score from plusplus order by score desc`)
-			if err != nil {
-				fmt.Printf("Database error: %v\n", err)
-				return
-			}
-			rank, nick, score := 1, "", 0
-			for rows.Next() {
-				rows.Scan(&nick, &score)
-				c.Notice(line.Args[0], fmt.Sprintf("%03d: %s (%d)\n", rank, nick, score))
-				rank++
-			}
-			return
+			go ranking(c, line)
+		} else {
+			parse(line.Args[1], func(nick string, plus int) {
+				go plusplus(c, line, nick, plus)
+			})
 		}
-		parse(line.Args[1], func(nick string, plus int) {
-			go plusplus(c, line, nick, plus)
-		})
 	})
 
 	for {
