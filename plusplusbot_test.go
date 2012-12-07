@@ -26,7 +26,7 @@ func TestPlusplus(t *testing.T) {
 	for _, e := range plusplusTests {
 		nick := ""
 		plus := 0
-		plusplus(e.input, func(n string, p int) {
+		parse(e.input, func(n string, p int) {
 			nick = n
 			plus = p
 		})

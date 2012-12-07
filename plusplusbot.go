@@ -3,8 +3,8 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	irc "github.com/fluffle/goirc/client"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/thoj/go-ircevent"
 	"os"
 	"regexp"
 	"strconv"
@@ -22,7 +22,7 @@ func atoi(a string) int {
 	return i
 }
 
-func plusplus(message string, callback func(nick string, plus int)) {
+func parse(message string, callback func(nick string, plus int)) {
 	if plus.MatchString(message) {
 		m := plus.FindStringSubmatch(message)
 		callback(m[1], 1)
@@ -38,6 +38,53 @@ func plusplus(message string, callback func(nick string, plus int)) {
 	}
 }
 
+func plusplus(c *irc.Conn, line *irc.Line, nick string, plus int) {
+	defer func() {
+		if err := recover(); err != nil {
+			println("die")
+		}
+	}()
+
+	tx, err := db.Begin()
+	if err != nil {
+		fmt.Printf("Database error: %v\n", err)
+		return
+	}
+	defer tx.Rollback()
+
+	score := 0
+	row, err := tx.Query(`select score from plusplus where nick = ?`, strings.ToLower(nick))
+	if err != nil {
+		fmt.Printf("Database error: %v\n", err)
+		return
+	}
+	if row.Next() {
+		err = row.Scan(&score)
+		if err != nil {
+			fmt.Printf("Database error: %v\n", err)
+			return
+		}
+	}
+	score += plus
+	row.Close()
+
+	stmt, err := tx.Prepare(`insert or replace into plusplus (nick, score) values (?, ?)`)
+	if err != nil {
+		fmt.Printf("Database error: %v\n", err)
+		return
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(strings.ToLower(nick), score)
+	if err != nil {
+		fmt.Printf("Database error: %v\n", err)
+		return
+	}
+	tx.Commit()
+
+	c.Notice(line.Args[0], fmt.Sprintf("%s (%d)", nick, score))
+}
+
 func main() {
 	var err error
 
@@ -48,14 +95,24 @@ func main() {
 	}
 	defer db.Close()
 
-	c := irc.IRC("plusplusbot", "plusplusbot")
-	if err := c.Connect("irc.freenode.net:6667"); err != nil {
-		fmt.Printf("Connection error: %v\n", err)
-		return
-	}
+	c := irc.SimpleClient("plusplusbot", "plusplusbot")
+	c.EnableStateTracking()
 
-	c.AddCallback("PRIVMSG", func(e *irc.Event) {
-		if e.Message == "!plusplus" {
+	c.AddHandler("connected", func(conn *irc.Conn, line *irc.Line) {
+		for _, room := range os.Args[1:] {
+			c.Join("#" + room)
+		}
+	})
+
+	quit := make(chan bool)
+	c.AddHandler("disconnected", func(conn *irc.Conn, line *irc.Line) {
+		quit <- true
+	})
+
+	c.AddHandler("privmsg", func(conn *irc.Conn, line *irc.Line) {
+		println("-" + line.Args[0] + "-")
+		println("-" + line.Args[1] + "-")
+		if line.Args[1] == "!plusplus" {
 			rows, err := db.Query(`select nick, score from plusplus order by score desc`)
 			if err != nil {
 				fmt.Printf("Database error: %v\n", err)
@@ -64,58 +121,21 @@ func main() {
 			rank, nick, score := 1, "", 0
 			for rows.Next() {
 				rows.Scan(&nick, &score)
-				c.Notice(e.Arguments[0], fmt.Sprintf("%03d: %s (%d)\n", rank, nick, score))
+				c.Notice(line.Args[0], fmt.Sprintf("%03d: %s (%d)\n", rank, nick, score))
 				rank++
 			}
 			return
 		}
-		plusplus(e.Message, func(nick string, plus int) {
-			println(nick, plus)
-
-			tx, err := db.Begin()
-			if err != nil {
-				fmt.Printf("Database error: %v\n", err)
-				return
-			}
-			defer tx.Rollback()
-
-			score := 0
-			row, err := tx.Query(`select score from plusplus where nick = ?`, strings.ToLower(nick))
-			if err != nil {
-				fmt.Printf("Database error: %v\n", err)
-				return
-			}
-			if row.Next() {
-				err = row.Scan(&score)
-				if err != nil {
-					fmt.Printf("Database error: %v\n", err)
-					return
-				}
-			}
-			score += plus
-			row.Close()
-
-			stmt, err := tx.Prepare(`insert or replace into plusplus (nick, score) values (?, ?)`)
-			if err != nil {
-				fmt.Printf("Database error: %v\n", err)
-				return
-			}
-			defer stmt.Close()
-
-			_, err = stmt.Exec(strings.ToLower(nick), score)
-			if err != nil {
-				fmt.Printf("Database error: %v\n", err)
-				return
-			}
-			tx.Commit()
-
-			c.Notice(e.Arguments[0], fmt.Sprintf("%s (%d)", nick, score))
+		parse(line.Args[1], func(nick string, plus int) {
+			go plusplus(c, line, nick, plus)
 		})
 	})
 
-	for _, room := range os.Args[1:] {
-		c.Join("#" + room)
+	for {
+		if err := c.Connect("irc.freenode.net:6667"); err != nil {
+			fmt.Printf("Connection error: %s\n", err)
+			return
+		}
+		<-quit
 	}
-
-	c.Loop()
 }
