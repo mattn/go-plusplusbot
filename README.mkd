@@ -1,0 +1,25 @@
+go-plusplusbot
+==============
+
+[![Build Status](https://travis-ci.org/mattn/go-plusplusbot.png?branch=master)](https://travis-ci.org/mattn/go-plusplusbot)
+[![Coverage Status](https://coveralls.io/repos/mattn/go-plusplusbot/badge.png?branch=HEAD)](https://coveralls.io/r/mattn/go-plusplusbot?branch=HEAD)
+
+Usage
+-----
+
+Install
+-------
+
+```
+go get github.com/mattn/go-plusplusbot
+```
+
+License
+-------
+
+MIT: http://mattn.mit-license.org/2013
+
+Author
+------
+
+Yasuhiro Matsumoto (mattn.jp@gmail.com)
