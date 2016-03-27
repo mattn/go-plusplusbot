@@ -144,18 +144,18 @@ func main() {
 	c := irc.SimpleClient("plusplusbot", "plusplusbot")
 	c.EnableStateTracking()
 
-	c.AddHandler("connected", func(conn *irc.Conn, line *irc.Line) {
+	c.HandleFunc("connected", func(conn *irc.Conn, line *irc.Line) {
 		for _, room := range os.Args[1:] {
 			c.Join("#" + room)
 		}
 	})
 
 	quit := make(chan bool)
-	c.AddHandler("disconnected", func(conn *irc.Conn, line *irc.Line) {
+	c.HandleFunc("disconnected", func(conn *irc.Conn, line *irc.Line) {
 		quit <- true
 	})
 
-	c.AddHandler("privmsg", func(conn *irc.Conn, line *irc.Line) {
+	c.HandleFunc("privmsg", func(conn *irc.Conn, line *irc.Line) {
 		println(line.Src, line.Args[0], line.Args[1])
 		if line.Args[1] == "!++" {
 			go ranking(c, line)
@@ -167,7 +167,7 @@ func main() {
 	})
 
 	for {
-		if err := c.Connect("irc.freenode.net:6667"); err != nil {
+		if err := c.ConnectTo("irc.freenode.net:6667"); err != nil {
 			fmt.Printf("Connection error: %s\n", err)
 			return
 		}
